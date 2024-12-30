@@ -1,8 +1,7 @@
 {
-    "name": "turbo-react-app",
-    "version": "1.0.0",
-    "scripts": {
-      "dev": "flash"
-    }
+  "name": "turbo-react-app",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "flash"
   }
-  
+}
