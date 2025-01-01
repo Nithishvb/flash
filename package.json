@@ -20,6 +20,7 @@
   "dependencies": {
     "@types/node": "^22.10.2",
     "commander": "^13.0.0",
+    "esbuild": "^0.24.2",
     "fs-extra": "^11.2.0",
     "ts-node": "^10.9.2"
   }
