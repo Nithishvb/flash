@@ -197,6 +197,18 @@ async function rewriteBareImports(code: string) {
         const preBundledPath = `/node_modules/.flash/deps/react.js`;
         path.node.source.value = preBundledPath;
 
+        let indentifierName: string = "";
+        
+        path.node.specifiers.forEach((specifier) => { 
+          if (t.isImportSpecifier(specifier)) {
+            const importedName = specifier.imported;
+            const localName = specifier.local.name;
+            indentifierName = specifier.local.name;
+            console.log("imported name" ,importedName);
+            console.log("imported name", localName);
+          }
+        })
+
         // Rewrite the import to a default import
         path.node.specifiers = [
           t.importDefaultSpecifier(t.identifier(importVariableName)),
@@ -205,10 +217,10 @@ async function rewriteBareImports(code: string) {
         // Add a new variable declaration for `StrictMode`
         const strictModeDeclaration = t.variableDeclaration("const", [
           t.variableDeclarator(
-            t.identifier("StrictMode"),
+            t.identifier(indentifierName),
             t.memberExpression(
               t.identifier(importVariableName),
-              t.stringLiteral("StrictMode"),
+              t.stringLiteral(indentifierName),
               true // Computed property
             )
           ),
