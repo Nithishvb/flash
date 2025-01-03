@@ -51,41 +51,65 @@ program
       } else {
         if (req.url) {
           const filePath = path.join(TARGET_DIR, req.url);
-
-          // Serve directly if the request is for node_modules
-          if (req.url.includes("node_modules")) {
+          if (req.url.includes(".css")) {
             if (fs.existsSync(filePath)) {
-
-              const data = fs.readFileSync(filePath);
-
+              const cssContent = fs.readFileSync(filePath, "utf-8");
+              const jsResponse = `
+                const __cssContent = ${JSON.stringify(cssContent)};
+                const __cssId = ${JSON.stringify(filePath)};
+                (function() {
+                  let style = document.querySelector(\`style[data-id="\${__cssId}"]\`);
+                  if (!style) {
+                    style = document.createElement("style");
+                    style.setAttribute("data-id", __cssId);
+                    document.head.appendChild(style);
+                  }
+                  style.textContent = __cssContent;
+                })();
+              `;
               res.writeHead(200, { "Content-Type": "application/javascript" });
-              res.end(data);
-            } else {
-              res.writeHead(404, { "Content-Type": "text/plain" });
-              res.end("File not found");
+              res.end(jsResponse);
+              return;
             }
-            return;
+          } else {
+            // Serve directly if the request is for node_modules
+            if (req.url.includes("node_modules")) {
+              if (fs.existsSync(filePath)) {
+                const data = fs.readFileSync(filePath);
+
+                res.writeHead(200, {
+                  "Content-Type": "application/javascript",
+                });
+                res.end(data);
+              } else {
+                res.writeHead(404, { "Content-Type": "text/plain" });
+                res.end("File not found");
+              }
+              return;
+            }
+
+            // Process user source files with esbuild
+            const result = await build({
+              entryPoints: [filePath],
+              bundle: false,
+              write: false,
+              loader: {
+                ".js": "jsx",
+                ".ts": "ts",
+                ".tsx": "tsx",
+              },
+              format: "esm",
+              jsx: "automatic",
+            });
+
+            // Rewrite bare imports for user source files
+            const modifiedCode = await rewriteBareImports(
+              result.outputFiles[0].text
+            );
+
+            res.writeHead(200, { "Content-Type": "application/javascript" });
+            res.end(modifiedCode);
           }
-
-          // Process user source files with esbuild
-          const result = await build({
-            entryPoints: [filePath],
-            bundle: false,
-            write: false,
-            loader: {
-              ".js": "jsx",
-              ".ts": "ts",
-              ".tsx": "tsx",
-            },
-            format: "esm",
-            jsx: "automatic"
-          });
-
-          // Rewrite bare imports for user source files
-          const modifiedCode = await rewriteBareImports(result.outputFiles[0].text);
-
-          res.writeHead(200, { "Content-Type": "application/javascript" });
-          res.end(modifiedCode);
         }
       }
     });
@@ -194,7 +218,6 @@ async function rewriteBareImports(code: string) {
       }
 
       if (importPath === "react/jsx-runtime") {
-
         const preBundledPath = `/node_modules/.flash/deps/react_jsx-runtime.js`;
         path.node.source.value = preBundledPath;
 
@@ -245,7 +268,6 @@ async function rewriteBareImports(code: string) {
         path.insertAfter(createRootDeclaration);
         path.insertAfter(createJsxDeclaration);
         path.insertAfter(createJsxsDeclaration);
-
       }
     },
   });
@@ -259,7 +281,11 @@ async function preBundleDependencies() {
   const dependencies = [
     {
       name: "react",
-      files: ["index.js", "cjs/react-jsx-runtime.development.js", "cjs/react-jsx-dev-runtime.development.js"],
+      files: [
+        "index.js",
+        "cjs/react-jsx-runtime.development.js",
+        "cjs/react-jsx-dev-runtime.development.js",
+      ],
     },
     {
       name: "react-dom",
@@ -275,9 +301,13 @@ async function preBundleDependencies() {
       }
     }
   }
-};
+}
 
-async function bundleFile(moduleName: string, fileName: string, entryPoint: string): Promise<void> {
+async function bundleFile(
+  moduleName: string,
+  fileName: string,
+  entryPoint: string
+): Promise<void> {
   const outputFileName: string = fileName.replace(/[\\/]/g, "_"); // Replace slashes with underscores
   const outDir: string = path.join(TARGET_DIR, "node_modules/.flash/deps");
 
@@ -297,7 +327,12 @@ async function bundleFile(moduleName: string, fileName: string, entryPoint: stri
 }
 
 function resolveFilePath(moduleName: string, fileName: string): string | null {
-  const filePath: string = path.join(TARGET_DIR, "node_modules", moduleName, fileName);
+  const filePath: string = path.join(
+    TARGET_DIR,
+    "node_modules",
+    moduleName,
+    fileName
+  );
   if (fs.existsSync(filePath)) {
     return filePath;
   } else {
