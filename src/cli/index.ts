@@ -8,103 +8,12 @@ import traverse from "@babel/traverse";
 import generate from "@babel/generator";
 import * as t from "@babel/types";
 import mime from "mime-types";
-import chokidar from "chokidar";
-
-const hostname = "localhost";
-const port = 5000;
-const TARGET_DIR = path.join(process.cwd(), "flash-demo-app");
-const NODE_MODULES_DIR = path.join(TARGET_DIR, "node_modules");
+import { hostname, imageExtensions, NODE_MODULES_DIR, port, TARGET_DIR } from "./constants";
+import { startWatching } from "./watcher";
+import { bundleFile } from "./bundler";
+import { resolveFilePath } from "./utils";
 
 const program = new Command();
-
-const imageExtensions = [
-  "jpg",
-  "jpeg",
-  "png",
-  "gif",
-  "bmp",
-  "tiff",
-  "svg",
-  "webp",
-  "heif",
-  "heic",
-  "avif",
-  "eps",
-  "pdf",
-  "ai",
-  "raw",
-  "cr2",
-  "nef",
-  "orf",
-  "sr2",
-  "apng", // Animated PNG
-  "ico", // Icon format
-  "xbm", // X BitMap
-  "pbm", // Portable Bitmap
-  "pgm", // Portable Graymap
-  "ppm", // Portable Pixmap
-  "exr", // OpenEXR
-];
-
-const watcher = chokidar.watch(NODE_MODULES_DIR, { ignoreInitial: true });
-
-async function bundlePackage(packageName: string) {
-  try {
-    const entryPoint = getEntryPoint(packageName);
-
-    const outputPath = path.join(
-      NODE_MODULES_DIR,
-      ".flash",
-      "deps",
-      `${packageName}.js`
-    );
-    await build({
-      entryPoints: [entryPoint],
-      bundle: true,
-      outfile: outputPath,
-      format: "esm",
-      platform: "browser",
-    });
-
-    console.log(`Bundled ${packageName} to ${outputPath}`);
-  } catch (error) {
-    console.error(`Failed to bundle ${packageName}:`, error);
-  }
-}
-
-function getEntryPoint(packageName: string) {
-  const packagePath = path.join(
-    TARGET_DIR,
-    "node_modules",
-    packageName,
-    "package.json"
-  );
-
-  if (fs.existsSync(packagePath)) {
-    const packageJson = require(packagePath);
-    // Prefer `module` field for ES modules
-    if (packageJson.module) {
-      return path.join(
-        TARGET_DIR,
-        "node_modules",
-        packageName,
-        packageJson.module
-      );
-    }
-    // Fallback to `main` field for CommonJS
-    if (packageJson.main) {
-      return path.join(
-        TARGET_DIR,
-        "node_modules",
-        packageName,
-        packageJson.main
-      );
-    }
-  }
-
-  // Default fallback: assume the package's folder contains an `index.js`
-  return path.join("node_modules", packageName, "index.js");
-}
 
 program
   .name("flash")
@@ -112,21 +21,7 @@ program
   .action(() => {
     console.log("Starting Flash Dev Server...");
 
-    watcher.on("addDir", async (dirPath) => {
-      const relativePath = path.relative(NODE_MODULES_DIR, dirPath);
-      const packageName = relativePath.split(path.sep)[0];
-
-      // Skip already processed packages
-      if (
-        fs.existsSync(
-          path.join(NODE_MODULES_DIR, ".flash", "deps", `${packageName}.js`)
-        )
-      ) {
-        return;
-      }
-
-      await bundlePackage(packageName);
-    });
+    startWatching();
 
     const server = http.createServer(async (req, res) => {
       console.log(`Request received: ${req.method} ${req.url}`);
@@ -473,43 +368,5 @@ async function preBundleDependencies() {
         await bundleFile(dep.name, file, entryPoint);
       }
     }
-  }
-}
-
-async function bundleFile(
-  moduleName: string,
-  fileName: string,
-  entryPoint: string
-): Promise<void> {
-  const outputFileName: string = fileName.replace(/[\\/]/g, "_"); // Replace slashes with underscores
-  const outDir: string = path.join(TARGET_DIR, "node_modules/.flash/deps");
-
-  try {
-    await build({
-      entryPoints: [entryPoint],
-      outfile: path.join(outDir, outputFileName),
-      bundle: true,
-      format: "esm",
-      platform: "browser",
-      metafile: true, // Generates a metafile for dependency insights
-    });
-    console.log(`Successfully bundled: ${moduleName}/${fileName}`);
-  } catch (error) {
-    console.error(`Error bundling file: ${moduleName}/${fileName}`, error);
-  }
-}
-
-function resolveFilePath(moduleName: string, fileName: string): string | null {
-  const filePath: string = path.join(
-    TARGET_DIR,
-    "node_modules",
-    moduleName,
-    fileName
-  );
-  if (fs.existsSync(filePath)) {
-    return filePath;
-  } else {
-    console.warn(`File not found: ${moduleName}/${fileName}`);
-    return null;
   }
 }
