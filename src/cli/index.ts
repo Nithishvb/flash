@@ -8,48 +8,125 @@ import traverse from "@babel/traverse";
 import generate from "@babel/generator";
 import * as t from "@babel/types";
 import mime from "mime-types";
+import chokidar from "chokidar";
 
 const hostname = "localhost";
 const port = 5000;
 const TARGET_DIR = path.join(process.cwd(), "flash-demo-app");
+const NODE_MODULES_DIR = path.join(TARGET_DIR, "node_modules");
 
 const program = new Command();
 
 const imageExtensions = [
-  'jpg',
-  'jpeg',
-  'png',
-  'gif',
-  'bmp',
-  'tiff',
-  'svg',
-  'webp',
-  'heif',
-  'heic',
-  'avif',
-  'eps',
-  'pdf',
-  'ai',
-  'raw',
-  'cr2',
-  'nef',
-  'orf',
-  'sr2',
-  'apng', // Animated PNG
-  'ico',  // Icon format
-  'xbm',  // X BitMap
-  'pbm',  // Portable Bitmap
-  'pgm',  // Portable Graymap
-  'ppm',  // Portable Pixmap
-  'exr',  // OpenEXR
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "bmp",
+  "tiff",
+  "svg",
+  "webp",
+  "heif",
+  "heic",
+  "avif",
+  "eps",
+  "pdf",
+  "ai",
+  "raw",
+  "cr2",
+  "nef",
+  "orf",
+  "sr2",
+  "apng", // Animated PNG
+  "ico", // Icon format
+  "xbm", // X BitMap
+  "pbm", // Portable Bitmap
+  "pgm", // Portable Graymap
+  "ppm", // Portable Pixmap
+  "exr", // OpenEXR
 ];
 
+const watcher = chokidar.watch(NODE_MODULES_DIR, { ignoreInitial: true });
+
+async function bundlePackage(packageName: string) {
+  try {
+    const entryPoint = getEntryPoint(packageName);
+
+    const outputPath = path.join(
+      NODE_MODULES_DIR,
+      ".flash",
+      "deps",
+      `${packageName}.js`
+    );
+    await build({
+      entryPoints: [entryPoint],
+      bundle: true,
+      outfile: outputPath,
+      format: "esm",
+      platform: "browser",
+    });
+
+    console.log(`Bundled ${packageName} to ${outputPath}`);
+  } catch (error) {
+    console.error(`Failed to bundle ${packageName}:`, error);
+  }
+}
+
+function getEntryPoint(packageName: string) {
+  const packagePath = path.join(
+    TARGET_DIR,
+    "node_modules",
+    packageName,
+    "package.json"
+  );
+
+  if (fs.existsSync(packagePath)) {
+    const packageJson = require(packagePath);
+    // Prefer `module` field for ES modules
+    if (packageJson.module) {
+      return path.join(
+        TARGET_DIR,
+        "node_modules",
+        packageName,
+        packageJson.module
+      );
+    }
+    // Fallback to `main` field for CommonJS
+    if (packageJson.main) {
+      return path.join(
+        TARGET_DIR,
+        "node_modules",
+        packageName,
+        packageJson.main
+      );
+    }
+  }
+
+  // Default fallback: assume the package's folder contains an `index.js`
+  return path.join("node_modules", packageName, "index.js");
+}
 
 program
   .name("flash")
   .description("Start React dev server")
   .action(() => {
     console.log("Starting Flash Dev Server...");
+
+    watcher.on("addDir", async (dirPath) => {
+      const relativePath = path.relative(NODE_MODULES_DIR, dirPath);
+      const packageName = relativePath.split(path.sep)[0];
+
+      // Skip already processed packages
+      if (
+        fs.existsSync(
+          path.join(NODE_MODULES_DIR, ".flash", "deps", `${packageName}.js`)
+        )
+      ) {
+        return;
+      }
+
+      await bundlePackage(packageName);
+    });
 
     const server = http.createServer(async (req, res) => {
       console.log(`Request received: ${req.method} ${req.url}`);
@@ -69,9 +146,11 @@ program
         // Handle requests that contain the "import" query parameter
         if (query === "import") {
           const filePath = path.join(TARGET_DIR, req.url.split("?")[0]);
-      
+
           if (fs.existsSync(filePath)) {
-            const fileUrl = `/${path.relative(TARGET_DIR, filePath).replace(/\\/g, "/")}`;
+            const fileUrl = `/${path
+              .relative(TARGET_DIR, filePath)
+              .replace(/\\/g, "/")}`;
             const jsResponse = `export default ${JSON.stringify(fileUrl)};`;
             res.writeHead(200, { "Content-Type": "application/javascript" });
             res.end(jsResponse);
@@ -185,7 +264,6 @@ program
           return;
         }
       }
-
     });
 
     server.listen(port, hostname, async () => {
@@ -197,7 +275,6 @@ program
 export default program;
 
 async function rewriteBareImports(code: string) {
-
   const ast = parse(code, {
     sourceType: "module", // Treat as an ES module
     plugins: ["jsx"], // Add support for JSX if needed
@@ -209,10 +286,11 @@ async function rewriteBareImports(code: string) {
 
       const splitImportPath = importPath.split(".");
 
+      const cachedDepsPath = `${NODE_MODULES_DIR}/.flash/deps`;
+
       if (importPath === "react-dom/client") {
         // Generate a new unique import variable
         const importVariableName = "__flash_import_reactDom_client";
-        const importedSpecifiers = path.node.specifiers;
 
         // Replace the import path with the pre-bundled path
         const preBundledPath = `/node_modules/.flash/deps/react-dom_client.js`;
@@ -243,34 +321,32 @@ async function rewriteBareImports(code: string) {
         const preBundledPath = `/node_modules/.flash/deps/react.js`;
         path.node.source.value = preBundledPath;
 
-        let indentifierName: string = "";
-
         path.node.specifiers.forEach((specifier) => {
-          if (t.isImportSpecifier(specifier)) {
-            const importedName = specifier.imported;
-            const localName = specifier.local.name;
-            indentifierName = specifier.local.name;
+          // Rewrite the import to a default import
+          if(t.isImportSpecifier(specifier)){
+            path.node.specifiers = [
+              t.importDefaultSpecifier(t.identifier(importVariableName)),
+            ];
+  
+            // Add a new variable declaration for `StrictMode`
+            const strictModeDeclaration = t.variableDeclaration("const", [
+              t.variableDeclarator(
+                t.identifier(specifier.local.name),
+                t.memberExpression(
+                  t.identifier(importVariableName),
+                  t.stringLiteral(specifier.local.name),
+                  true // Computed property
+                )
+              ),
+            ]);
+  
+            path.insertAfter(strictModeDeclaration);
+          }else{
+            path.node.specifiers = [
+              t.importDefaultSpecifier(t.identifier(specifier.local.name)),
+            ];
           }
         });
-
-        // Rewrite the import to a default import
-        path.node.specifiers = [
-          t.importDefaultSpecifier(t.identifier(importVariableName)),
-        ];
-
-        // Add a new variable declaration for `StrictMode`
-        const strictModeDeclaration = t.variableDeclaration("const", [
-          t.variableDeclarator(
-            t.identifier(indentifierName),
-            t.memberExpression(
-              t.identifier(importVariableName),
-              t.stringLiteral(indentifierName),
-              true // Computed property
-            )
-          ),
-        ]);
-
-        path.insertAfter(strictModeDeclaration);
       }
 
       if (importPath === "react/jsx-runtime") {
@@ -279,7 +355,6 @@ async function rewriteBareImports(code: string) {
 
         // Generate a new unique import variable
         const importVariableName = "__flash_import_reactRuntime";
-        const importedSpecifiers = path.node.specifiers;
 
         // Rewrite the import to a default import
         path.node.specifiers = [
@@ -327,29 +402,46 @@ async function rewriteBareImports(code: string) {
       }
 
       //Insert import for the assets import statements
-      if(splitImportPath.length > 0){
-        const result = imageExtensions.includes(splitImportPath[splitImportPath.length - 1]);
-        if(result){
+      if (splitImportPath.length > 0) {
+        const result = imageExtensions.includes(
+          splitImportPath[splitImportPath.length - 1]
+        );
+        if (result) {
           path.node.source.value = `${importPath}?import`;
         }
       }
 
-      //non react modules imports
-      // const nonReactModuleFilePath = `/node_modules/.flash/deps/${importPath},js`;
-      // if(fs.readFileSync(nonReactModuleFilePath)){
-      //   path.node.source.value = nonReactModuleFilePath;
-      // }else{
-      //   const buildPath = `/node_modules/${importPath}`;
-      //   const result = await build({
-      //     entryPoints: [buildPath],
-      //     outfile: path.join(`/node_modules/.flash/deps`, `${importPath}.js`),
-      //     bundle: true,
-      //     format: "esm",
-      //     platform: "browser",
-      //     metafile: true,
-      //   });
+      //handle dependency modules imports
+      if (!importPath.includes("react") && !importPath.includes("./")) {
+        const checkDepsPath = `${cachedDepsPath}/${importPath}.js`;
 
-      // }
+        if (fs.readFileSync(checkDepsPath)) {
+          path.node.source.value = `/node_modules/.flash/deps/${importPath}.js`;
+
+          // Generate a new unique import variable
+          const importVariableName = `__flash_${importPath}_import`;
+
+          path.node.specifiers.forEach((specifier) => {
+            if(t.isImportDefaultSpecifier(specifier)){
+              path.node.specifiers = [
+                t.importDefaultSpecifier(t.identifier(specifier.local.name)),
+              ];
+            }else{
+              const createDepsDeclaration = t.variableDeclaration("const", [
+                t.variableDeclarator(
+                  t.identifier(specifier.local.name),
+                  t.memberExpression(
+                    t.identifier(importVariableName),
+                    t.stringLiteral(specifier.local.name),
+                    true // Computed property
+                  )
+                ),
+              ]);
+              path.insertAfter(createDepsDeclaration);
+            }
+          });
+        }
+      }
     },
   });
 
