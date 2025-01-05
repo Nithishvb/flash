@@ -1,5 +1,3 @@
-// src/utils.ts
-
 import fs from "fs";
 import path from "path";
 import { NODE_MODULES_DIR } from "./constants";
@@ -9,11 +7,13 @@ export function getEntryPoint(packageName: string): string {
 
   if (fs.existsSync(packagePath)) {
     const packageJson = require(packagePath);
-    return (
-      packageJson.module ||
-      packageJson.main ||
-      path.join(packageName, "index.js")
-    );
+
+    const entryPoint = packageJson.module || packageJson.main;
+
+    if (entryPoint) {
+      return path.resolve(path.dirname(packagePath), entryPoint);
+    }
+    return path.join(packageName, "index.js");
   }
 
   return path.join("node_modules", packageName, "index.js");
