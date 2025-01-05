@@ -6,6 +6,7 @@ export const hostname = "localhost";
 export const port = 5000;
 export const TARGET_DIR = path.join(process.cwd(), "flash-demo-app");
 export const NODE_MODULES_DIR = path.join(TARGET_DIR, "node_modules");
+export const SOURCE_DIR = path.join(TARGET_DIR, "src");
 
 export const imageExtensions = [
   "jpg",

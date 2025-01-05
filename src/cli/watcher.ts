@@ -1,11 +1,12 @@
 import chokidar from "chokidar";
-import { NODE_MODULES_DIR } from "./constants";
+import { NODE_MODULES_DIR, SOURCE_DIR } from "./constants";
 import { bundlePackage } from "./bundler";
 import fs from "fs";
 import path from "path";
 import { debounce } from "lodash";
 
-const watcher = chokidar.watch(NODE_MODULES_DIR, { ignoreInitial: true });
+const nodeWatcher = chokidar.watch(NODE_MODULES_DIR, { ignoreInitial: true });
+const srcWatcher = chokidar.watch(SOURCE_DIR, { ignoreInitial: true });
 
 const handleAddDir = debounce(async (dirPath) => {
   const relativePath = path.relative(NODE_MODULES_DIR, dirPath);
@@ -26,8 +27,16 @@ const handleAddDir = debounce(async (dirPath) => {
   }
 }, 200);
 
+
 export function startWatching() {
-  watcher.on("addDir", async (dirPath) => {
+  nodeWatcher.on("addDir", async (dirPath) => {
     handleAddDir(dirPath);
+  });
+
+  srcWatcher.on("change", (filePath) => {
+    console.log("file_path", filePath);
+    // debounce(() => {
+    //   broadcastChange(filePath);
+    // }, 200);
   });
 }

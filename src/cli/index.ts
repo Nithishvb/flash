@@ -10,8 +10,10 @@ import * as t from "@babel/types";
 import mime from "mime-types";
 import { hostname, imageExtensions, NODE_MODULES_DIR, port, TARGET_DIR } from "./constants";
 import { startWatching } from "./watcher";
-import { bundleFile } from "./bundler";
 import { resolveFilePath } from "./utils";
+import { bundleFile } from "./bundler";
+import WebSocket from "ws";
+
 
 const program = new Command();
 
@@ -144,6 +146,7 @@ program
               },
               format: "esm",
               jsx: "automatic",
+              sourcemap: "inline"
             });
 
             const modifiedCode = await rewriteBareImports(
@@ -163,7 +166,34 @@ program
 
     server.listen(port, hostname, async () => {
       console.log(`Server running at http://${hostname}:${port}/`);
-      // await preBundleDependencies();
+      const HMR_SERVER_URL = "ws://localhost:5000";
+      const wss = new WebSocket(HMR_SERVER_URL);
+
+      function initWebSocket() {
+        wss.on("open", () => {
+          console.log("WebSocket connection established for HMR.");
+        });
+
+        wss.on("message", (data) => {
+          console.log("Received message from server:", data);
+
+          const message = JSON.parse(data.toString());
+          if (message.type === "update") {
+            const { updates } = message;
+            console.log("File updates:", updates);
+          }
+        });
+
+        wss.on('error', (error) => {
+          console.log("Error connnecting web socket server", error);
+        })
+
+      }
+
+      initWebSocket();
+
+      // initWebSocket();
+      // await preBundleReactDependencies();
     });
   });
 
@@ -370,3 +400,12 @@ async function preBundleDependencies() {
     }
   }
 }
+
+// export function broadcastChange(filePath: string) {
+//   wss.send(
+//     JSON.stringify({
+//       type: "update",
+//       updates: [filePath],
+//     })
+//   );
+// }
