@@ -36,3 +36,16 @@ export function resolveFilePath(
     return null;
   }
 }
+
+export function getRelativePath(fullPath: string) {
+
+  const parts = fullPath.split("\\");
+
+  const relativePath = parts
+    .filter((part) => part)
+    .slice(-2)
+    .join("/")
+    .toLowerCase();
+
+  return relativePath;
+}

@@ -1,11 +1,15 @@
 import WebSocket from "ws";
 
+export const connectedClients: Set<WebSocket> = new Set();
+
 export function initWebSocket() {
   try {
     const wss = new WebSocket.Server({ port: 4000 });
 
     wss.on("connection", (socket) => {
-      console.log("WebSocket connection established for HMR.");
+      console.log("WebSocket connection established for HMR."); 
+
+      connectedClients.add(socket);
 
       socket.send(
         JSON.stringify({
