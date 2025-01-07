@@ -8,12 +8,18 @@ import traverse from "@babel/traverse";
 import generate from "@babel/generator";
 import * as t from "@babel/types";
 import mime from "mime-types";
-import { hostname, imageExtensions, NODE_MODULES_DIR, port, TARGET_DIR } from "./constants";
+import {
+  hostname,
+  imageExtensions,
+  NODE_MODULES_DIR,
+  port,
+  TARGET_DIR,
+} from "./constants";
 import { startWatching } from "./watcher";
 import { resolveFilePath } from "./utils";
 import { bundleFile } from "./bundler";
 import WebSocket from "ws";
-
+import { initWebSocket } from "./ws";
 
 const program = new Command();
 
@@ -24,6 +30,7 @@ program
     console.log("Starting Flash Dev Server...");
 
     startWatching();
+    initWebSocket();
 
     const server = http.createServer(async (req, res) => {
       console.log(`Request received: ${req.method} ${req.url}`);
@@ -71,8 +78,20 @@ program
                 return;
               }
 
+              const content = data.replace(
+                "</body>",
+                `<script>
+                  const ws = new WebSocket('ws://localhost:4000');
+                  socket.onopen = () => {
+                      console.log('WebSocket Client Connected');
+                      // You can send a message after connection is established
+                      socket.send('Hello Server!');
+                  };
+
+                </script></body>`
+              );
               res.writeHead(200, { "Content-Type": "text/html" });
-              res.end(data);
+              res.end(content);
             }
           );
           return;
@@ -146,7 +165,7 @@ program
               },
               format: "esm",
               jsx: "automatic",
-              sourcemap: "inline"
+              sourcemap: "inline",
             });
 
             const modifiedCode = await rewriteBareImports(
@@ -166,33 +185,6 @@ program
 
     server.listen(port, hostname, async () => {
       console.log(`Server running at http://${hostname}:${port}/`);
-      const HMR_SERVER_URL = "ws://localhost:5000";
-      const wss = new WebSocket(HMR_SERVER_URL);
-
-      function initWebSocket() {
-        wss.on("open", () => {
-          console.log("WebSocket connection established for HMR.");
-        });
-
-        wss.on("message", (data) => {
-          console.log("Received message from server:", data);
-
-          const message = JSON.parse(data.toString());
-          if (message.type === "update") {
-            const { updates } = message;
-            console.log("File updates:", updates);
-          }
-        });
-
-        wss.on('error', (error) => {
-          console.log("Error connnecting web socket server", error);
-        })
-
-      }
-
-      initWebSocket();
-
-      // initWebSocket();
       // await preBundleReactDependencies();
     });
   });
@@ -248,11 +240,11 @@ async function rewriteBareImports(code: string) {
 
         path.node.specifiers.forEach((specifier) => {
           // Rewrite the import to a default import
-          if(t.isImportSpecifier(specifier)){
+          if (t.isImportSpecifier(specifier)) {
             path.node.specifiers = [
               t.importDefaultSpecifier(t.identifier(importVariableName)),
             ];
-  
+
             // Add a new variable declaration for `StrictMode`
             const strictModeDeclaration = t.variableDeclaration("const", [
               t.variableDeclarator(
@@ -264,9 +256,9 @@ async function rewriteBareImports(code: string) {
                 )
               ),
             ]);
-  
+
             path.insertAfter(strictModeDeclaration);
-          }else{
+          } else {
             path.node.specifiers = [
               t.importDefaultSpecifier(t.identifier(specifier.local.name)),
             ];
@@ -347,11 +339,11 @@ async function rewriteBareImports(code: string) {
           const importVariableName = `__flash_${importPath}_import`;
 
           path.node.specifiers.forEach((specifier) => {
-            if(t.isImportDefaultSpecifier(specifier)){
+            if (t.isImportDefaultSpecifier(specifier)) {
               path.node.specifiers = [
                 t.importDefaultSpecifier(t.identifier(specifier.local.name)),
               ];
-            }else{
+            } else {
               const createDepsDeclaration = t.variableDeclaration("const", [
                 t.variableDeclarator(
                   t.identifier(specifier.local.name),
@@ -400,12 +392,3 @@ async function preBundleDependencies() {
     }
   }
 }
-
-// export function broadcastChange(filePath: string) {
-//   wss.send(
-//     JSON.stringify({
-//       type: "update",
-//       updates: [filePath],
-//     })
-//   );
-// }
