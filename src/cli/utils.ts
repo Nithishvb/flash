@@ -39,7 +39,9 @@ export function resolveFilePath(
 
 export function getRelativePath(fullPath: string) {
 
-  const parts = fullPath.split("\\");
+  const absolutePath = path.resolve(fullPath);
+
+  const parts = absolutePath.split("\\");
 
   const relativePath = parts
     .filter((part) => part)

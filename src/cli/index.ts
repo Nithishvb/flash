@@ -82,17 +82,17 @@ program
                 `<script>
                   const socket = new WebSocket('ws://localhost:4000');
                   socket.onopen = () => {
-                      console.log('WebSocket Client Connected');
-                      // You can send a message after connection is established
-                      socket.send('Hello Server!');
+                    socket.send('Hello Server!');
                   };
 
                   socket.onmessage = async (event) => {
-                    console.log('Received:', event.data);
                     const recievedData = JSON.parse(event.data);
                     if(recievedData && recievedData.type){
-                      const updatedModule = await fetch(recievedData.file).then((res) => res.text());
-                      console.log(updatedModule);
+                      try {
+                        await import(recievedData.file);
+                      } catch (error) {
+                        console.error("Error dynamically importing module:", error);
+                      }
                     }
                  };
 

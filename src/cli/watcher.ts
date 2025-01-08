@@ -46,7 +46,7 @@ export function broadcastChange(filePath: string) {
 
   const message = JSON.stringify({
     type: "update",
-    file: fileName
+    file: `./${fileName}`
   });
 
   for (const client of connectedClients) {
