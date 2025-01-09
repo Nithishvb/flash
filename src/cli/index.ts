@@ -177,7 +177,8 @@ program
             });
 
             const modifiedCode = await rewriteBareImports(
-              result.outputFiles[0].text
+              result.outputFiles[0].text,
+              filePath
             );
             res.writeHead(200, { "Content-Type": "application/javascript" });
             res.end(modifiedCode);
@@ -199,7 +200,7 @@ program
 
 export default program;
 
-async function rewriteBareImports(code: string) {
+async function rewriteBareImports(code: string, filePath: string) {
   const ast = parse(code, {
     sourceType: "module", // Treat as an ES module
     plugins: ["jsx"], // Add support for JSX if needed
@@ -367,6 +368,19 @@ async function rewriteBareImports(code: string) {
           });
         }
       }
+    },
+    Program(path) {
+      const importDeclaration = t.importDeclaration(
+        [t.importSpecifier(t.identifier("createFashHotContext"), t.identifier("createFashHotContext"))],
+        t.stringLiteral("../hmr")
+      );
+
+      const callExpression = t.expressionStatement(
+        t.callExpression(t.identifier("createFashHotContext"), [t.stringLiteral(filePath)])
+      );
+
+      path.unshiftContainer("body", callExpression);
+      path.unshiftContainer("body", importDeclaration);
     },
   });
 
